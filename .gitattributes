@@ -1,3 +1,4 @@
+HEAD
 # Unity .gitattributes Template
 # Source: https://github.com/gitattributes/gitattributes/blob/master/Unity.gitattributes
 # Last synced: 2026-02-04
@@ -169,3 +170,4 @@ Packages/packages-lock.json linguist-generated
 
 # Exceptions for .asset files such as lightning pre-baking
 LightingData.asset     binary
+*.png filter=lfs diff=lfs merge=lfs -text
