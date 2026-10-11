@@ -1,0 +1,419 @@
+using System.Collections.Generic;
+using UnityEngine;
+
+public class RoomChainGenerator : MonoBehaviour
+{
+    public enum PlaneNormal { X = 0, Z = 2 }
+
+    [Header("Room Prefabs")]
+    public GameObject startingRoomPrefab;
+    public GameObject[] roomPrefabs;
+
+    [Header("Generation")]
+    public int numberOfRooms = 10;
+    public Vector3 startPosition = Vector3.zero;
+
+    [Header("Plane")]
+    [Tooltip("The axis pointing out of your 2D layout. Z = rooms laid out in XY. " +
+             "X = rooms laid out in YZ. The Y rotation is never changed.")]
+    public PlaneNormal planeNormal = PlaneNormal.Z;
+
+    [Tooltip("After the map is built, the whole map is turned by this rotation around " +
+             "Start Position. (-90, 0, 0) lays a map built in the XY plane flat on the " +
+             "ground. Use (90, 0, 0) if it comes out the wrong way round, or (0, 0, 0) " +
+             "to leave the map as built. Individual rooms are not changed.")]
+    public Vector3 dungeonRotation = new Vector3(-90f, 0f, 0f);
+
+    [Header("Placement")]
+    [Tooltip("Allow 90 degree turns around the plane's normal axis so the Entrance " +
+             "can face the Exit. Untick to only reposition rooms, never turn them.")]
+    public bool allowFlatTurns = true;
+
+    [Tooltip("Keep every room at the same depth along the plane's normal axis " +
+             "as the starting room.")]
+    public bool keepOnSamePlane = true;
+
+    [Tooltip("Slide each new room along the door direction until its doorway wall " +
+             "touches the doorway wall of the room it connects to.")]
+    public bool snapDoorFaces = true;
+
+    [Tooltip("Rooms may overlap by up to this many units (wall thickness). " +
+             "Raise if valid rooms get rejected, lower if rooms still overlap.")]
+    public float overlapPadding = 0.3f;
+
+    [Header("Debug")]
+    [Tooltip("Log which plane is used and why rooms were rejected.")]
+    public bool verboseLog = true;
+
+    private struct DoorSlot
+    {
+        public Transform marker;
+        public Transform room;
+    }
+
+    private static readonly float[] turnAngles = { 0f, 90f, 180f, 270f };
+
+    private readonly List<DoorSlot> availableExits = new List<DoorSlot>();
+    private readonly List<Transform> placedRooms = new List<Transform>();
+
+    // Plane setup (filled in by SetupPlane).
+    private int normalIdx;   // axis out of the plane
+    private int axisA;       // first in-plane axis
+    private int axisB;       // second in-plane axis
+    private Vector3 normalVec;
+    private Vector3 dirA;
+    private Vector3 dirB;
+    private float planeLevel;
+
+    private void Start()
+    {
+        GenerateDungeon();
+    }
+
+    private void SetupPlane()
+    {
+        normalIdx = (int)planeNormal;
+        axisA = (normalIdx + 1) % 3;
+        axisB = (normalIdx + 2) % 3;
+
+        normalVec = AxisVector(normalIdx);
+        dirA = AxisVector(axisA);
+        dirB = AxisVector(axisB);
+    }
+
+    private static Vector3 AxisVector(int index)
+    {
+        Vector3 v = Vector3.zero;
+        v[index] = 1f;
+        return v;
+    }
+
+    public void GenerateDungeon()
+    {
+        availableExits.Clear();
+        placedRooms.Clear();
+        SetupPlane();
+
+        if (startingRoomPrefab == null)
+        {
+            Debug.LogError("Starting Room Prefab is not assigned!");
+            return;
+        }
+
+        if (roomPrefabs == null || roomPrefabs.Length == 0)
+        {
+            Debug.LogError("No room prefabs assigned!");
+            return;
+        }
+
+        GameObject startRoom = Instantiate(
+            startingRoomPrefab,
+            startPosition,
+            startingRoomPrefab.transform.rotation);
+
+        placedRooms.Add(startRoom.transform);
+
+        planeLevel = TryGetBounds(startRoom.transform, out Bounds startBounds)
+            ? startBounds.min[normalIdx]
+            : startRoom.transform.position[normalIdx];
+
+        if (verboseLog)
+        {
+            Debug.Log("RoomChainGenerator: laying rooms out in the plane with " +
+                "normal axis " + planeNormal + ". Turns happen around " +
+                planeNormal + ".");
+        }
+
+        AddRoomExits(startRoom.transform, null);
+
+        if (availableExits.Count == 0)
+        {
+            Debug.LogWarning("The starting room has no Exit markers " +
+                "(objects named Exit, Exit1, Exit2...).");
+        }
+
+        int placed = 0;
+
+        while (placed < numberOfRooms && availableExits.Count > 0)
+        {
+            int exitIndex = Random.Range(0, availableExits.Count);
+            DoorSlot target = availableExits[exitIndex];
+            availableExits.RemoveAt(exitIndex);
+
+            if (TryPlaceRoomAt(target))
+                placed++;
+        }
+
+        ParentAndOrientDungeon();
+
+        if (placed < numberOfRooms)
+        {
+            Debug.LogWarning("Only placed " + placed + " of " + numberOfRooms +
+                " rooms. Check the Console for the reason on each exit.");
+        }
+    }
+
+    // Groups every room under one object and turns that object, so the whole
+    // map is laid down together. The rooms' own rotations stay as generated.
+    private void ParentAndOrientDungeon()
+    {
+        GameObject root = new GameObject("Generated Dungeon");
+        root.transform.position = startPosition;
+
+        foreach (Transform room in placedRooms)
+            room.SetParent(root.transform, true);
+
+        root.transform.rotation = Quaternion.Euler(dungeonRotation);
+    }
+
+    private bool TryPlaceRoomAt(DoorSlot target)
+    {
+        Vector3 exitDir = GetDoorDirection(target.marker, target.room);
+        if (exitDir == Vector3.zero)
+        {
+            if (verboseLog)
+                Debug.LogWarning("Could not work out which way '" +
+                    target.marker.name + "' of " + target.room.name + " faces.");
+            return false;
+        }
+
+        // The new room's Entrance has to face the opposite way.
+        Vector3 neededEntranceDir = -exitDir;
+
+        int wrongSide = 0;
+        int overlapped = 0;
+        int noEntrance = 0;
+
+        List<GameObject> candidates = new List<GameObject>(roomPrefabs);
+        Shuffle(candidates);
+
+        foreach (GameObject prefab in candidates)
+        {
+            if (prefab == null)
+                continue;
+
+            GameObject newRoom = Instantiate(
+                prefab, Vector3.zero, prefab.transform.rotation);
+
+            Transform entrance = FindEntrance(newRoom.transform);
+            if (entrance == null)
+            {
+                noEntrance++;
+                Destroy(newRoom);
+                continue;
+            }
+
+            bool facingFound = false;
+            bool placedThisRoom = false;
+
+            foreach (float turn in turnAngles)
+            {
+                if (!allowFlatTurns && turn != 0f)
+                    break;
+
+                // Start from the prefab's own rotation and add the turn to the
+                // plane normal's angle only (Z, or X). The Y angle is copied
+                // from the prefab unchanged.
+                Vector3 euler = prefab.transform.eulerAngles;
+                euler[normalIdx] += turn;
+                Quaternion rotation = Quaternion.Euler(euler);
+
+                newRoom.transform.SetPositionAndRotation(Vector3.zero, rotation);
+
+                // Does the Entrance face the Exit in this turn?
+                if (GetDoorDirection(entrance, newRoom.transform) != neededEntranceDir)
+                    continue;
+
+                facingFound = true;
+
+                // 1) Put the Entrance on the Exit (inside the plane only).
+                Vector3 offset = target.marker.position - entrance.position;
+                offset[normalIdx] = 0f;
+                newRoom.transform.position += offset;
+
+                // 2) Slide along the door direction so the doorway walls touch.
+                if (snapDoorFaces &&
+                    TryGetBounds(target.room, out Bounds targetBounds) &&
+                    TryGetBounds(newRoom.transform, out Bounds newBounds))
+                {
+                    float targetFace = FaceCoordinate(targetBounds, exitDir);
+                    float newNearFace = FaceCoordinate(newBounds, neededEntranceDir);
+
+                    newRoom.transform.position +=
+                        exitDir * (targetFace - newNearFace);
+                }
+
+                // 3) Same depth as the starting room.
+                if (keepOnSamePlane &&
+                    TryGetBounds(newRoom.transform, out Bounds planeBounds))
+                {
+                    newRoom.transform.position +=
+                        normalVec * (planeLevel - planeBounds.min[normalIdx]);
+                }
+
+                // 4) Reject if it runs into an existing room.
+                if (OverlapsExistingRooms(newRoom.transform))
+                {
+                    overlapped++;
+                    continue;
+                }
+
+                placedThisRoom = true;
+                break;
+            }
+
+            if (placedThisRoom)
+            {
+                placedRooms.Add(newRoom.transform);
+                AddRoomExits(newRoom.transform, entrance);
+                return true;
+            }
+
+            if (!facingFound)
+                wrongSide++;
+
+            Destroy(newRoom);
+        }
+
+        if (verboseLog)
+        {
+            Debug.LogWarning(
+                "Exit '" + target.marker.name + "' of " + target.room.name +
+                " faces " + exitDir + ". No room fit. Rooms whose Entrance could not " +
+                "face it: " + wrongSide + ". Placements rejected for overlap: " +
+                overlapped + ". Rooms without an Entrance marker: " + noEntrance + ".");
+        }
+
+        return false;
+    }
+
+    // Position of a bounding-box face along an in-plane cardinal direction.
+    private float FaceCoordinate(Bounds b, Vector3 dir)
+    {
+        int idx = Mathf.Abs(dir[axisA]) > 0.5f ? axisA : axisB;
+        return dir[idx] > 0f ? b.max[idx] : b.min[idx];
+    }
+
+    private bool OverlapsExistingRooms(Transform newRoom)
+    {
+        MeshRenderer[] newRenderers =
+            newRoom.GetComponentsInChildren<MeshRenderer>(true);
+
+        foreach (Transform existing in placedRooms)
+        {
+            MeshRenderer[] oldRenderers =
+                existing.GetComponentsInChildren<MeshRenderer>(true);
+
+            foreach (MeshRenderer a in newRenderers)
+            {
+                foreach (MeshRenderer b in oldRenderers)
+                {
+                    if (BoundsOverlapInPlane(a.bounds, b.bounds))
+                        return true;
+                }
+            }
+        }
+
+        return false;
+    }
+
+    private bool BoundsOverlapInPlane(Bounds a, Bounds b)
+    {
+        float overlapA = Mathf.Min(a.max[axisA], b.max[axisA]) -
+                         Mathf.Max(a.min[axisA], b.min[axisA]);
+        float overlapB = Mathf.Min(a.max[axisB], b.max[axisB]) -
+                         Mathf.Max(a.min[axisB], b.min[axisB]);
+
+        return overlapA > overlapPadding && overlapB > overlapPadding;
+    }
+
+    private void Shuffle(List<GameObject> list)
+    {
+        for (int i = list.Count - 1; i > 0; i--)
+        {
+            int j = Random.Range(0, i + 1);
+            GameObject tmp = list[i];
+            list[i] = list[j];
+            list[j] = tmp;
+        }
+    }
+
+    private bool TryGetBounds(Transform room, out Bounds bounds)
+    {
+        MeshRenderer[] renderers = room.GetComponentsInChildren<MeshRenderer>(true);
+
+        if (renderers.Length == 0)
+        {
+            bounds = new Bounds();
+            return false;
+        }
+
+        bounds = renderers[0].bounds;
+        for (int i = 1; i < renderers.Length; i++)
+            bounds.Encapsulate(renderers[i].bounds);
+
+        return true;
+    }
+
+    private Transform FindEntrance(Transform room)
+    {
+        foreach (Transform t in room.GetComponentsInChildren<Transform>(true))
+        {
+            if (t.name.Equals("Entrance",
+                System.StringComparison.OrdinalIgnoreCase))
+                return t;
+        }
+        return null;
+    }
+
+    private void AddRoomExits(Transform room, Transform usedEntrance)
+    {
+        foreach (Transform t in room.GetComponentsInChildren<Transform>(true))
+        {
+            if (t == usedEntrance)
+                continue;
+
+            if (IsExitName(t.name))
+                availableExits.Add(new DoorSlot { marker = t, room = room });
+        }
+    }
+
+    private bool IsExitName(string markerName)
+    {
+        if (markerName.Equals("Exit",
+            System.StringComparison.OrdinalIgnoreCase))
+            return true;
+
+        // Accepts Exit1, Exit2, Exit3, ...
+        if (markerName.StartsWith("Exit",
+            System.StringComparison.OrdinalIgnoreCase))
+        {
+            string suffix = markerName.Substring(4);
+            return suffix.Length > 0 && int.TryParse(suffix, out _);
+        }
+
+        return false;
+    }
+
+    private Vector3 GetDoorDirection(Transform marker, Transform room)
+    {
+        if (!TryGetBounds(room, out Bounds bounds))
+            return Vector3.zero;
+
+        Vector3 p = marker.position;
+
+        float best = Mathf.Abs(bounds.max[axisA] - p[axisA]);
+        Vector3 dir = dirA;
+
+        float d = Mathf.Abs(p[axisA] - bounds.min[axisA]);
+        if (d < best) { best = d; dir = -dirA; }
+
+        d = Mathf.Abs(bounds.max[axisB] - p[axisB]);
+        if (d < best) { best = d; dir = dirB; }
+
+        d = Mathf.Abs(p[axisB] - bounds.min[axisB]);
+        if (d < best) { best = d; dir = -dirB; }
+
+        return dir;
+    }
+}
