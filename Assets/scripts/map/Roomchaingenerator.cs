@@ -3,6 +3,7 @@ using UnityEngine;
 
 public class RoomChainGenerator : MonoBehaviour
 {
+
     public enum PlaneNormal { X = 0, Z = 2 }
 
     [Header("Room Prefabs")]
@@ -23,6 +24,29 @@ public class RoomChainGenerator : MonoBehaviour
              "ground. Use (90, 0, 0) if it comes out the wrong way round, or (0, 0, 0) " +
              "to leave the map as built. Individual rooms are not changed.")]
     public Vector3 dungeonRotation = new Vector3(-90f, 0f, 0f);
+
+    [Header("Player Spawn")]
+    [Tooltip("The player to move onto the spawn marker. If empty, the object tagged " +
+             "Player (or named Player) is used.")]
+    public Transform player;
+
+    [Tooltip("Name of the spawn marker object inside a room (case and spaces ignored).")]
+    public string playerSpawnName = "Player Spawn";
+
+    [Tooltip("Extra height above the marker so the player doesn't spawn inside the floor.")]
+    public float spawnHeightOffset = 0.5f;
+
+    [Tooltip("How far past a room's walls (in units) the player must be to count " +
+             "as having entered it.")]
+    public float enterMargin = 0.5f;
+
+    [Tooltip("Extra height above the marker so enemies don't spawn inside the floor.")]
+    public float enemySpawnHeightOffset = 0.5f;
+
+    [Header("Colliders")]
+    [Tooltip("Add a Mesh Collider to every room mesh that has no collider yet, " +
+             "so the player can't walk through walls.")]
+    public bool addMeshColliders = true;
 
     [Header("Placement")]
     [Tooltip("Allow 90 degree turns around the plane's normal axis so the Entrance " +
@@ -56,10 +80,9 @@ public class RoomChainGenerator : MonoBehaviour
     private readonly List<DoorSlot> availableExits = new List<DoorSlot>();
     private readonly List<Transform> placedRooms = new List<Transform>();
 
-    // Plane setup (filled in by SetupPlane).
-    private int normalIdx;   // axis out of the plane
-    private int axisA;       // first in-plane axis
-    private int axisB;       // second in-plane axis
+    private int normalIdx;   
+    private int axisA;       
+    private int axisB;       
     private Vector3 normalVec;
     private Vector3 dirA;
     private Vector3 dirB;
@@ -145,6 +168,7 @@ public class RoomChainGenerator : MonoBehaviour
         }
 
         ParentAndOrientDungeon();
+        SpawnPlayer();
 
         if (placed < numberOfRooms)
         {
@@ -161,9 +185,141 @@ public class RoomChainGenerator : MonoBehaviour
         root.transform.position = startPosition;
 
         foreach (Transform room in placedRooms)
+        {
+            if (addMeshColliders)
+                EnsureColliders(room);
+
             room.SetParent(root.transform, true);
+        }
 
         root.transform.rotation = Quaternion.Euler(dungeonRotation);
+    }
+
+    private Transform resolvedPlayer;
+
+    // Moves the player onto the spawn marker. Runs after the map has been
+    // rotated, so the marker's world position is already final.
+    private void SpawnPlayer()
+    {
+        Transform p = player;
+
+        if (p == null)
+        {
+            GameObject found = null;
+
+            try { found = GameObject.FindGameObjectWithTag("Player"); }
+            catch (UnityException) { } 
+            if (found == null)
+                found = GameObject.Find("Player");
+
+            if (found != null)
+                p = found.transform;
+        }
+
+        if (p == null)
+        {
+            Debug.LogWarning("No player found. Assign one to the Player field.");
+            return;
+        }
+
+        resolvedPlayer = p;
+
+        Transform marker = FindMarker(playerSpawnName, out Transform markerRoom);
+        if (marker == null)
+        {
+            Debug.LogWarning("No marker named '" + playerSpawnName +
+                "' found in the generated rooms.");
+            return;
+        }
+
+        // Click these Console messages to highlight the marker in the Hierarchy.
+        if (markerRoom != placedRooms[0])
+        {
+            Debug.LogWarning(
+                "The starting room has no '" + playerSpawnName + "' marker, so the " +
+                "player was sent to the one in " + markerRoom.name + ". Set Starting " +
+                "Room Prefab to the room that holds the marker, and make sure the " +
+                "marker is inside the prefab asset itself, not only in the scene.",
+                marker);
+        }
+        else if (verboseLog)
+        {
+            Debug.Log("Player teleported to '" + marker.name + "' in the starting room (" +
+                markerRoom.name + ").", marker);
+        }
+
+        if (markerRoom != placedRooms[0])
+        {
+            Debug.LogWarning(
+                "The starting room has no '" + playerSpawnName + "' marker, so the " +
+                "player was sent to the one in " + markerRoom.name + ". Make sure " +
+                "Starting Room Prefab is the room that holds the marker, and that the " +
+                "marker is inside the prefab asset itself, not only in the scene copy.",
+                marker);
+        }
+        else if (verboseLog)
+        {
+            Debug.Log("Player teleported to the starting room's '" +
+                marker.name + "'.", marker);
+        }
+
+        Vector3 spawnPosition = marker.position + Vector3.up * spawnHeightOffset;
+
+        CharacterController controller = p.GetComponent<CharacterController>();
+        if (controller != null)
+            controller.enabled = false;
+
+        p.position = spawnPosition;
+
+        // PlayerMovement drives a Rigidbody with MovePosition, so move the
+        // Rigidbody's own position too (it would otherwise lag behind).
+        Rigidbody body = p.GetComponent<Rigidbody>();
+        if (body != null)
+            body.position = spawnPosition;
+
+        if (controller != null)
+            controller.enabled = true;
+
+        Physics.SyncTransforms();
+    }
+
+    // Gives every mesh in the room a Mesh Collider if it has none.
+    private void EnsureColliders(Transform room)
+    {
+        foreach (MeshFilter filter in room.GetComponentsInChildren<MeshFilter>(true))
+        {
+            if (filter.sharedMesh == null)
+                continue;
+
+            if (filter.GetComponent<Collider>() != null)
+                continue;
+
+            MeshCollider meshCollider = filter.gameObject.AddComponent<MeshCollider>();
+            meshCollider.sharedMesh = filter.sharedMesh;
+        }
+    }
+
+    // Searches the starting room first, then the other rooms in the order
+    // they were placed, and reports which room the marker was found in.
+    private Transform FindMarker(string markerName, out Transform markerRoom)
+    {
+        string wanted = markerName.Replace(" ", "");
+
+        foreach (Transform room in placedRooms)
+        {
+            foreach (Transform t in room.GetComponentsInChildren<Transform>(true))
+            {
+                if (t.name.Replace(" ", "").Equals(
+                    wanted, System.StringComparison.OrdinalIgnoreCase))
+                {
+                    markerRoom = room;
+                    return t;
+                }
+            }
+        }
+
+        markerRoom = null;
+        return null;
     }
 
     private bool TryPlaceRoomAt(DoorSlot target)
@@ -211,9 +367,6 @@ public class RoomChainGenerator : MonoBehaviour
                 if (!allowFlatTurns && turn != 0f)
                     break;
 
-                // Start from the prefab's own rotation and add the turn to the
-                // plane normal's angle only (Z, or X). The Y angle is copied
-                // from the prefab unchanged.
                 Vector3 euler = prefab.transform.eulerAngles;
                 euler[normalIdx] += turn;
                 Quaternion rotation = Quaternion.Euler(euler);
