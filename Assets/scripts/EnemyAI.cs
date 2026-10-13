@@ -12,28 +12,40 @@ public class EnemyAI : MonoBehaviour
         rb = GetComponent<Rigidbody>();
         rb.constraints = RigidbodyConstraints.FreezeRotation; // Agar tidak menggelinding
 
-        // Otomatis mencari objek bernama "Player" jika kolom target kosong
-        if (player == null)
-        {
-            player = GameObject.Find("Player").transform;
-        }
+        CariPlayer();
     }
 
     void FixedUpdate()
     {
-        if (player != null)
+        // Jika player belum ditemukan (misal karena telat spawn), coba cari terus sampai dapat
+        if (player == null)
         {
-            // Menghitung arah menuju pemain
-            Vector3 direction = (player.position - transform.position).normalized;
+            CariPlayer();
+            return; // Hentikan gerakan sampai player benar-benar ada
+        }
 
-            // Bergerak perlahan ke arah pemain
-            Vector3 movePosition = transform.position + direction * moveSpeed * Time.fixedDeltaTime;
-            movePosition.y = transform.position.y; // Mengunci sumbu Y agar tidak melayang
+        // 1. Menyamakan sumbu Y target dengan posisi musuh (Kunci Anti-Melayang)
+        // Ini memastikan musuh tidak mencoba terbang ke atas atau menembus lantai
+        Vector3 targetPosition = new Vector3(player.position.x, transform.position.y, player.position.z);
 
-            rb.MovePosition(movePosition);
+        // 2. Menghitung arah HANYA pada sumbu X dan Z
+        Vector3 direction = (targetPosition - transform.position).normalized;
 
-            // Mengubah arah hadap musuh agar selalu melihat pemain
-            transform.LookAt(new Vector3(player.position.x, transform.position.y, player.position.z));
+        // 3. Bergerak menggunakan dorongan fisika perlahan
+        Vector3 movePosition = transform.position + direction * moveSpeed * Time.fixedDeltaTime;
+        rb.MovePosition(movePosition);
+
+        // 4. Mengubah arah hadap musuh agar terus melihat pemain
+        transform.LookAt(targetPosition);
+    }
+
+    // Fungsi khusus untuk mencari player dengan aman tanpa memicu error
+    void CariPlayer()
+    {
+        GameObject playerObj = GameObject.Find("Player");
+        if (playerObj != null)
+        {
+            player = playerObj.transform;
         }
     }
 }
