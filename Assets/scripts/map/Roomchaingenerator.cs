@@ -4,76 +4,25 @@ using UnityEngine;
 public class RoomChainGenerator : MonoBehaviour
 {
     public enum PlaneNormal { X = 0, Z = 2 }
-
-    [Header("Room Prefabs")]
     public GameObject startingRoomPrefab;
     public GameObject[] roomPrefabs;
-
-    [Header("Generation")]
     public int numberOfRooms = 10;
     public Vector3 startPosition = Vector3.zero;
-
-    [Header("Plane")]
-    [Tooltip("The axis pointing out of your 2D layout. Z = rooms laid out in XY. " +
-             "X = rooms laid out in YZ. The Y rotation is never changed.")]
     public PlaneNormal planeNormal = PlaneNormal.Z;
-
-    [Tooltip("After the map is built, the whole map is turned by this rotation around " +
-             "Start Position. (-90, 0, 0) lays a map built in the XY plane flat on the " +
-             "ground. Use (90, 0, 0) if it comes out the wrong way round, or (0, 0, 0) " +
-             "to leave the map as built. Individual rooms are not changed.")]
     public Vector3 dungeonRotation = new Vector3(-90f, 0f, 0f);
-
-    [Header("Player Spawn")]
-    [Tooltip("The player to move onto the spawn marker. If empty, the object tagged " +
-             "Player (or named Player) is used.")]
     public Transform player;
-
-    [Tooltip("Name of the spawn marker object inside a room (case and spaces ignored).")]
     public string playerSpawnName = "Player Spawn";
-
-    [Tooltip("Extra height above the marker so the player doesn't spawn inside the floor.")]
     public float spawnHeightOffset = 0.5f;
-
-    [Header("Enemies")]
-    [Tooltip("Enemy prefabs to spawn when the player enters a room. One random prefab " +
-             "is spawned at each 'Enemy spawn' marker. Leave empty for no enemies.")]
     public GameObject[] enemyPrefabs;
-
-    [Tooltip("Don't spawn enemies in the starting room.")]
     public bool skipStartRoom = true;
-
-    [Tooltip("How far past a room's walls (in units) the player must be to count " +
-             "as having entered it.")]
     public float enterMargin = 0.5f;
-
-    [Tooltip("Extra height above the marker so enemies don't spawn inside the floor.")]
+    public float enemyTriggerDistance = 8f;
     public float enemySpawnHeightOffset = 0.5f;
-
-    [Header("Colliders")]
-    [Tooltip("Add a Mesh Collider to every room mesh that has no collider yet, " +
-             "so the player can't walk through walls.")]
     public bool addMeshColliders = true;
-
-    [Header("Placement")]
-    [Tooltip("Allow 90 degree turns around the plane's normal axis so the Entrance " +
-             "can face the Exit. Untick to only reposition rooms, never turn them.")]
     public bool allowFlatTurns = true;
-
-    [Tooltip("Keep every room at the same depth along the plane's normal axis " +
-             "as the starting room.")]
     public bool keepOnSamePlane = true;
-
-    [Tooltip("Slide each new room along the door direction until its doorway wall " +
-             "touches the doorway wall of the room it connects to.")]
     public bool snapDoorFaces = true;
-
-    [Tooltip("Rooms may overlap by up to this many units (wall thickness). " +
-             "Raise if valid rooms get rejected, lower if rooms still overlap.")]
     public float overlapPadding = 0.3f;
-
-    [Header("Debug")]
-    [Tooltip("Log which plane is used and why rooms were rejected.")]
     public bool verboseLog = true;
 
     private struct DoorSlot
@@ -87,10 +36,9 @@ public class RoomChainGenerator : MonoBehaviour
     private readonly List<DoorSlot> availableExits = new List<DoorSlot>();
     private readonly List<Transform> placedRooms = new List<Transform>();
 
-    // Plane setup (filled in by SetupPlane).
-    private int normalIdx;   // axis out of the plane
-    private int axisA;       // first in-plane axis
-    private int axisB;       // second in-plane axis
+    private int normalIdx;  
+    private int axisA;       
+    private int axisB;      
     private Vector3 normalVec;
     private Vector3 dirA;
     private Vector3 dirB;
@@ -204,7 +152,7 @@ public class RoomChainGenerator : MonoBehaviour
 
     private Transform resolvedPlayer;
 
-
+    // Adds a RoomEnemyTrigger to every room so enemies appear when the player walk in
     private void SetupEnemyTriggers()
     {
         if (enemyPrefabs == null || enemyPrefabs.Length == 0)
@@ -239,8 +187,7 @@ public class RoomChainGenerator : MonoBehaviour
         }
     }
 
-    // Moves the player onto the spawn marker. Runs after the map has been
-    // rotated, so the marker's world position is already final.
+    // Moves the player onto the spawn marker.
     private void SpawnPlayer()
     {
         Transform p = player;
@@ -250,7 +197,7 @@ public class RoomChainGenerator : MonoBehaviour
             GameObject found = null;
 
             try { found = GameObject.FindGameObjectWithTag("Player"); }
-            catch (UnityException) { } // the "Player" tag doesn't exist
+            catch (UnityException) { } 
 
             if (found == null)
                 found = GameObject.Find("Player");
@@ -340,8 +287,7 @@ public class RoomChainGenerator : MonoBehaviour
         }
     }
 
-    // Searches the starting room first, then the other rooms in the order
-    // they were placed, and reports which room the marker was found in.
+    // Searches the starting room first
     private Transform FindMarker(string markerName, out Transform markerRoom)
     {
         string wanted = markerName.Replace(" ", "");

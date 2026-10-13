@@ -1,10 +1,5 @@
 using UnityEngine;
 
-/// <summary>
-/// Added to each generated room by RoomChainGenerator.
-/// The first time the player walks into the room, one enemy is spawned at
-/// every "Enemy spawn" marker inside it. Each room only triggers once.
-/// </summary>
 public class RoomEnemyTrigger : MonoBehaviour
 {
     private Transform player;
@@ -80,22 +75,15 @@ public class RoomEnemyTrigger : MonoBehaviour
 
             Vector3 position = t.position + Vector3.up * spawnHeightOffset;
 
-            // Not parented to the room: the map is turned onto the ground, and
-            // a parented enemy would be turned with it.
             GameObject enemy = Instantiate(
                 prefab, position, Quaternion.identity, enemyContainer);
 
-            // Give the enemy its target straight away.
-            // The piranha prefab keeps EnemyAI on a child object, so search
-            // the whole prefab, not only the root.
             EnemyAI ai = enemy.GetComponentInChildren<EnemyAI>(true);
             if (ai != null)
                 ai.player = player;
         }
     }
 
-    // Matches "Enemy spawn", "EnemySpawn", "enemy_spawn 2", ... (case, spaces
-    // and underscores ignored).
     private static bool IsEnemyMarker(string markerName)
     {
         string cleaned = markerName.Replace(" ", "").Replace("_", "");
