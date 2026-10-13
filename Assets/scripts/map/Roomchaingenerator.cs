@@ -3,7 +3,6 @@ using UnityEngine;
 
 public class RoomChainGenerator : MonoBehaviour
 {
-
     public enum PlaneNormal { X = 0, Z = 2 }
 
     [Header("Room Prefabs")]
@@ -35,6 +34,14 @@ public class RoomChainGenerator : MonoBehaviour
 
     [Tooltip("Extra height above the marker so the player doesn't spawn inside the floor.")]
     public float spawnHeightOffset = 0.5f;
+
+    [Header("Enemies")]
+    [Tooltip("Enemy prefabs to spawn when the player enters a room. One random prefab " +
+             "is spawned at each 'Enemy spawn' marker. Leave empty for no enemies.")]
+    public GameObject[] enemyPrefabs;
+
+    [Tooltip("Don't spawn enemies in the starting room.")]
+    public bool skipStartRoom = true;
 
     [Tooltip("How far past a room's walls (in units) the player must be to count " +
              "as having entered it.")]
@@ -80,9 +87,10 @@ public class RoomChainGenerator : MonoBehaviour
     private readonly List<DoorSlot> availableExits = new List<DoorSlot>();
     private readonly List<Transform> placedRooms = new List<Transform>();
 
-    private int normalIdx;   
-    private int axisA;       
-    private int axisB;       
+    // Plane setup (filled in by SetupPlane).
+    private int normalIdx;   // axis out of the plane
+    private int axisA;       // first in-plane axis
+    private int axisB;       // second in-plane axis
     private Vector3 normalVec;
     private Vector3 dirA;
     private Vector3 dirB;
@@ -169,6 +177,7 @@ public class RoomChainGenerator : MonoBehaviour
 
         ParentAndOrientDungeon();
         SpawnPlayer();
+        SetupEnemyTriggers();
 
         if (placed < numberOfRooms)
         {
@@ -177,8 +186,6 @@ public class RoomChainGenerator : MonoBehaviour
         }
     }
 
-    // Groups every room under one object and turns that object, so the whole
-    // map is laid down together. The rooms' own rotations stay as generated.
     private void ParentAndOrientDungeon()
     {
         GameObject root = new GameObject("Generated Dungeon");
@@ -197,6 +204,41 @@ public class RoomChainGenerator : MonoBehaviour
 
     private Transform resolvedPlayer;
 
+
+    private void SetupEnemyTriggers()
+    {
+        if (enemyPrefabs == null || enemyPrefabs.Length == 0)
+        {
+            if (verboseLog)
+                Debug.Log("No Enemy Prefabs assigned, so no enemies will spawn.");
+            return;
+        }
+
+        if (resolvedPlayer == null)
+        {
+            Debug.LogWarning("No player found, so enemy triggers were not set up.");
+            return;
+        }
+
+        GameObject container = new GameObject("Spawned Enemies");
+
+        for (int i = 0; i < placedRooms.Count; i++)
+        {
+            if (i == 0 && skipStartRoom)
+                continue;
+
+            RoomEnemyTrigger trigger =
+                placedRooms[i].gameObject.AddComponent<RoomEnemyTrigger>();
+
+            trigger.Setup(
+                resolvedPlayer,
+                enemyPrefabs,
+                container.transform,
+                enterMargin,
+                enemySpawnHeightOffset);
+        }
+    }
+
     // Moves the player onto the spawn marker. Runs after the map has been
     // rotated, so the marker's world position is already final.
     private void SpawnPlayer()
@@ -208,7 +250,8 @@ public class RoomChainGenerator : MonoBehaviour
             GameObject found = null;
 
             try { found = GameObject.FindGameObjectWithTag("Player"); }
-            catch (UnityException) { } 
+            catch (UnityException) { } // the "Player" tag doesn't exist
+
             if (found == null)
                 found = GameObject.Find("Player");
 
@@ -271,8 +314,6 @@ public class RoomChainGenerator : MonoBehaviour
 
         p.position = spawnPosition;
 
-        // PlayerMovement drives a Rigidbody with MovePosition, so move the
-        // Rigidbody's own position too (it would otherwise lag behind).
         Rigidbody body = p.GetComponent<Rigidbody>();
         if (body != null)
             body.position = spawnPosition;
@@ -440,7 +481,6 @@ public class RoomChainGenerator : MonoBehaviour
         return false;
     }
 
-    // Position of a bounding-box face along an in-plane cardinal direction.
     private float FaceCoordinate(Bounds b, Vector3 dir)
     {
         int idx = Mathf.Abs(dir[axisA]) > 0.5f ? axisA : axisB;
@@ -537,7 +577,6 @@ public class RoomChainGenerator : MonoBehaviour
             System.StringComparison.OrdinalIgnoreCase))
             return true;
 
-        // Accepts Exit1, Exit2, Exit3, ...
         if (markerName.StartsWith("Exit",
             System.StringComparison.OrdinalIgnoreCase))
         {
