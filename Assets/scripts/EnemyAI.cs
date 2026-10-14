@@ -3,49 +3,56 @@ using UnityEngine;
 [RequireComponent(typeof(Rigidbody))]
 public class EnemyAI : MonoBehaviour
 {
-    public Transform player; // Target yang akan dikejar
-    public float moveSpeed = 3f; // Kecepatan gerak musuh
+    [Header("Pengaturan Musuh")]
+    public float moveSpeed = 4f;
+    public Transform player; // Boleh dibiarkan kosong di Inspector
+
     private Rigidbody rb;
 
     void Start()
     {
         rb = GetComponent<Rigidbody>();
-        rb.constraints = RigidbodyConstraints.FreezeRotation; // Agar tidak menggelinding
+        rb.constraints = RigidbodyConstraints.FreezeRotation;
 
-        CariPlayer();
+        // Memaksa mencari objek "Player" di detik pertama
+        FindTarget();
+    }
+
+    void FindTarget()
+    {
+        GameObject targetObj = GameObject.Find("Player");
+        if (targetObj != null)
+        {
+            player = targetObj.transform;
+        }
+        else
+        {
+            Debug.LogError("MUSUH GAGAL MENEMUKAN PLAYER! Pastikan nama karakter dieja 'Player'.");
+        }
     }
 
     void FixedUpdate()
     {
-        // Jika player belum ditemukan (misal karena telat spawn), coba cari terus sampai dapat
+        // Jika target masih kosong, cari terus menerus
         if (player == null)
         {
-            CariPlayer();
-            return; // Hentikan gerakan sampai player benar-benar ada
+            FindTarget();
+            return;
         }
 
-        // 1. Menyamakan sumbu Y target dengan posisi musuh (Kunci Anti-Melayang)
-        // Ini memastikan musuh tidak mencoba terbang ke atas atau menembus lantai
-        Vector3 targetPosition = new Vector3(player.position.x, transform.position.y, player.position.z);
+        // --- INTI PERGERAKAN ---
 
-        // 2. Menghitung arah HANYA pada sumbu X dan Z
-        Vector3 direction = (targetPosition - transform.position).normalized;
+        // 1. Kunci posisi Y target agar sejajar dengan posisi musuh (Anti melayang/tenggelam)
+        Vector3 targetPos = new Vector3(player.position.x, transform.position.y, player.position.z);
 
-        // 3. Bergerak menggunakan dorongan fisika perlahan
-        Vector3 movePosition = transform.position + direction * moveSpeed * Time.fixedDeltaTime;
-        rb.MovePosition(movePosition);
+        // 2. Dapatkan arah menuju target
+        Vector3 direction = (targetPos - transform.position).normalized;
 
-        // 4. Mengubah arah hadap musuh agar terus melihat pemain
-        transform.LookAt(targetPosition);
-    }
+        // 3. Pindahkan tubuh musuh secara paksa menggunakan dorongan fisika
+        Vector3 nextPosition = transform.position + direction * moveSpeed * Time.fixedDeltaTime;
+        rb.MovePosition(nextPosition);
 
-    // Fungsi khusus untuk mencari player dengan aman tanpa memicu error
-    void CariPlayer()
-    {
-        GameObject playerObj = GameObject.Find("Player");
-        if (playerObj != null)
-        {
-            player = playerObj.transform;
-        }
+        // 4. Ubah arah wajah musuh
+        transform.LookAt(targetPos);
     }
 }
