@@ -1498,11 +1498,14 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::PlayerCombat
   attackPoint: {fileID: 1642302014}
-  attackRange: 1.5
+  attackRange: 2.5
   attackDamage: 20
   enemyLayers:
     serializedVersion: 2
     m_Bits: 256
+  showAttackSphere: 1
+  sphereDuration: 0.2
+  debugLog: 1
 --- !u!1 &1530193111
 GameObject:
   m_ObjectHideFlags: 0
@@ -1579,7 +1582,7 @@ MonoBehaviour:
   startPosition: {x: -20, y: 0, z: -44}
   planeNormal: 2
   dungeonRotation: {x: -90, y: 0, z: 0}
-  player: {fileID: 0}
+  player: {fileID: 1430950356}
   playerSpawnName: Player Spawn
   spawnHeightOffset: 0.5
   enemyPrefabs:
@@ -1634,7 +1637,7 @@ Transform:
   m_GameObject: {fileID: 1642302013}
   serializedVersion: 2
   m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
-  m_LocalPosition: {x: 3.72, y: 2.59, z: 3.74}
+  m_LocalPosition: {x: -0, y: 0.42, z: -0.06}
   m_LocalScale: {x: 1, y: 1, z: 1}
   m_ConstrainProportionsScale: 0
   m_Children: []
@@ -1764,7 +1767,7 @@ Transform:
   m_GameObject: {fileID: 1728219945}
   serializedVersion: 2
   m_LocalRotation: {x: -0.7071068, y: -0, z: -0, w: 0.7071067}
-  m_LocalPosition: {x: -0.0065400014, y: 0.00045999957, z: -0.0019800034}
+  m_LocalPosition: {x: -0.0065400014, y: 0.00045999957, z: 0.00137}
   m_LocalScale: {x: 1, y: 1, z: 1}
   m_ConstrainProportionsScale: 0
   m_Children: []
