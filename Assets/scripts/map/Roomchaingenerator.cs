@@ -36,7 +36,7 @@ public class RoomChainGenerator : MonoBehaviour
     private readonly List<DoorSlot> availableExits = new List<DoorSlot>();
     private readonly List<Transform> placedRooms = new List<Transform>();
 
-    private int normalIdx;  
+    private int normalIdx;   
     private int axisA;       
     private int axisB;      
     private Vector3 normalVec;
@@ -157,8 +157,8 @@ public class RoomChainGenerator : MonoBehaviour
     {
         if (enemyPrefabs == null || enemyPrefabs.Length == 0)
         {
-            if (verboseLog)
-                Debug.Log("No Enemy Prefabs assigned, so no enemies will spawn.");
+            Debug.LogWarning("Enemy Prefabs is empty on the RoomChainGenerator, " +
+                "so no enemies will spawn. Drag the piranha prefab into it.");
             return;
         }
 
@@ -169,6 +169,9 @@ public class RoomChainGenerator : MonoBehaviour
         }
 
         GameObject container = new GameObject("Spawned Enemies");
+
+        int rooms = 0;
+        int markers = 0;
 
         for (int i = 0; i < placedRooms.Count; i++)
         {
@@ -183,11 +186,33 @@ public class RoomChainGenerator : MonoBehaviour
                 enemyPrefabs,
                 container.transform,
                 enterMargin,
-                enemySpawnHeightOffset);
+                enemyTriggerDistance,
+                enemySpawnHeightOffset,
+                verboseLog);
+
+            if (trigger.MarkerCount > 0)
+            {
+                rooms++;
+                markers += trigger.MarkerCount;
+            }
+        }
+
+        if (verboseLog)
+        {
+            Debug.Log("Enemy triggers ready: " + rooms + " room(s) with " + markers +
+                " 'Enemy spawn' marker(s). Enemies appear when the player " +
+                "gets close.");
+        }
+
+        if (markers == 0)
+        {
+            Debug.LogWarning("None of the generated rooms (except the start room) " +
+                "has an 'Enemy spawn' marker, so no enemies can spawn. Check the " +
+                "marker names inside the room prefab assets.");
         }
     }
 
-    // Moves the player onto the spawn marker.
+    // Moves the player onto the spawn marker
     private void SpawnPlayer()
     {
         Transform p = player;
@@ -197,7 +222,7 @@ public class RoomChainGenerator : MonoBehaviour
             GameObject found = null;
 
             try { found = GameObject.FindGameObjectWithTag("Player"); }
-            catch (UnityException) { } 
+            catch (UnityException) { }
 
             if (found == null)
                 found = GameObject.Find("Player");
@@ -254,7 +279,6 @@ public class RoomChainGenerator : MonoBehaviour
         }
 
         Vector3 spawnPosition = marker.position + Vector3.up * spawnHeightOffset;
-
         CharacterController controller = p.GetComponent<CharacterController>();
         if (controller != null)
             controller.enabled = false;
@@ -427,6 +451,7 @@ public class RoomChainGenerator : MonoBehaviour
         return false;
     }
 
+    // Position of a bounding-box face along an in-plane cardinal direction.
     private float FaceCoordinate(Bounds b, Vector3 dir)
     {
         int idx = Mathf.Abs(dir[axisA]) > 0.5f ? axisA : axisB;

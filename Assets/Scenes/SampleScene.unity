@@ -1343,7 +1343,7 @@ GameObject:
   - component: {fileID: 1430950351}
   m_Layer: 0
   m_Name: Player
-  m_TagString: Untagged
+  m_TagString: Player
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
   m_StaticEditorFlags: 0
@@ -1515,6 +1515,11 @@ Transform:
   - {fileID: 594097344}
   m_Father: {fileID: 0}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+--- !u!1 &1627119944 stripped
+GameObject:
+  m_CorrespondingSourceObject: {fileID: 4293595912212538009, guid: b2d8ec28c35ed5b4d8d4ecacdecc9628, type: 3}
+  m_PrefabInstance: {fileID: 549462553}
+  m_PrefabAsset: {fileID: 0}
 --- !u!1 &1638041296
 GameObject:
   m_ObjectHideFlags: 0
@@ -1557,9 +1562,11 @@ MonoBehaviour:
   player: {fileID: 0}
   playerSpawnName: Player Spawn
   spawnHeightOffset: 0.5
-  enemyPrefabs: []
+  enemyPrefabs:
+  - {fileID: 1627119944}
   skipStartRoom: 1
   enterMargin: 0.5
+  enemyTriggerDistance: 8
   enemySpawnHeightOffset: 0.5
   addMeshColliders: 1
   allowFlatTurns: 1
